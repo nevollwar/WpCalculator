@@ -5,8 +5,8 @@ namespace WpEngine.Core.Parsing;
 /// </summary>
 public enum TokenType
 {
-    Number,         // 42, 3.14
-    Identifier,     // x, y, z. Так же if и else
+    Number,         // число, например 42, 3.14
+    Identifier,     // переменная - например: x, y, z. Так же сюда входит if и else
 
     Plus,           // +
     Minus,          // -
