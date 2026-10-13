@@ -16,8 +16,13 @@ public class CodeParser : ICodeParser
     /// <exception cref="ParseException">Текст записан некорректно.</exception>
     public Statement ParseProgram(string code)
     {
-        var parser = new Parser(Lexer.Tokenize(code));
-        return parser.ParseProgram();
+        List<Token> tokens = Lexer.Tokenize(code);
+
+        // В списке только токен End: текст пустой или состоит из одних пробелов
+        if (tokens.Count == 1)
+            throw new ParseException("Программа пуста", 0);
+
+        return new Parser(tokens).ParseProgram();
     }
 
     /// <summary>
@@ -28,7 +33,13 @@ public class CodeParser : ICodeParser
     /// <exception cref="ParseException">Текст записан некорректно.</exception>
     public Condition ParseCondition(string conditionText)
     {
-        var parser = new Parser(Lexer.Tokenize(conditionText));
+        List<Token> tokens = Lexer.Tokenize(conditionText);
+
+        // В списке только токен End: текст пустой или состоит из одних пробелов
+        if (tokens.Count == 1)
+            throw new ParseException("Условие пустое", 0);
+
+        var parser = new Parser(tokens);
         Condition condition = parser.ParseCondition();
 
         // Условие могло закончиться раньше текста, например "x > 5 )"
