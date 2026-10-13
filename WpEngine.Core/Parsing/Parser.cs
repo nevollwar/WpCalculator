@@ -8,6 +8,19 @@ namespace WpEngine.Core.Parsing;
 /// </summary>
 public class Parser
 {
+    /// <summary>
+    /// Знаки сравнения и соответствующие им операции в AST.
+    /// </summary>
+    private static readonly Dictionary<TokenType, RelationalOp> RelationalOps = new()
+    {
+        [TokenType.Equal] = RelationalOp.Equal,
+        [TokenType.NotEqual] = RelationalOp.NotEqual,
+        [TokenType.Less] = RelationalOp.Less,
+        [TokenType.LessOrEqual] = RelationalOp.LessOrEqual,
+        [TokenType.Greater] = RelationalOp.Greater,
+        [TokenType.GreaterOrEqual] = RelationalOp.GreaterOrEqual
+    };
+
     private readonly List<Token> _tokens;
 
     // Индекс текущего токена в списке, разбор начинается с первого
@@ -146,6 +159,124 @@ public class Parser
 
         // Для остального выражения заменяем "-x" на "0 - x", тот же результат
         return new BinaryExpr(new NumberExpr(0), BinaryOp.Sub, expr);
+    }
+
+    /// <summary>
+    /// Парсит условие: части, соединённые ||.
+    /// </summary>
+    /// <returns>Дерево условия.</returns>
+    /// <exception cref="ParseException">Условие записано некорректно.</exception>
+    public Condition ParseCondition()
+    {
+        Condition left = ParseAnd();
+
+        // Движение вперёд, пока после части стоит ||. Как и в выражениях,
+        // прошлый результат каждый раз становится левой частью
+        while (Current.Type == TokenType.Or)
+        {
+            Advance();
+
+            Condition right = ParseAnd();
+            left = new LogicalCondition(left, LogicalOp.Or, right);
+        }
+
+        return left;
+    }
+
+    /// <summary>
+    /// Парсит часть условия: части поменьше, соединённые &amp;&amp;.
+    /// </summary>
+    /// <returns>Дерево условия.</returns>
+    /// <exception cref="ParseException">Условие записано некорректно.</exception>
+    private Condition ParseAnd()
+    {
+        Condition left = ParseNot();
+
+        // То же самое, что в ParseCondition, только для &&.
+        // Разбирается глубже ||, поэтому "a || b && c" это "a || (b && c)"
+        while (Current.Type == TokenType.And)
+        {
+            Advance();
+
+            Condition right = ParseNot();
+            left = new LogicalCondition(left, LogicalOp.And, right);
+        }
+
+        return left;
+    }
+
+    /// <summary>
+    /// Парсит условие со знаком !, если он есть, или обычное условие без него.
+    /// </summary>
+    /// <returns>Дерево условия.</returns>
+    /// <exception cref="ParseException">Условие записано некорректно.</exception>
+    private Condition ParseNot()
+    {
+        // После ! снова вызываем ParseNot, чтобы работало "!!a"
+        if (Current.Type == TokenType.Not)
+        {
+            Advance();
+            return new NotCondition(ParseNot());
+        }
+
+        return ParseAtom();
+    }
+
+    /// <summary>
+    /// Парсит самое мелкое условие: true, false, сравнение или условие в скобках.
+    /// </summary>
+    /// <returns>Дерево условия.</returns>
+    /// <exception cref="ParseException">Условие записано некорректно.</exception>
+    private Condition ParseAtom()
+    {
+        // true и false приходят от лексера как обычные имена
+        if (Current.Type == TokenType.Identifier && Current.Text is "true" or "false")
+        {
+            Token literal = Advance();
+            return new BooleanLiteralCondition(literal.Text == "true");
+        }
+
+        if (Current.Type != TokenType.LeftParen)
+            return ParseComparison();
+
+        // Скобка может быть частью выражения, как в "(x + 1) > 5", а может
+        // стоять вокруг условия, как в "(x > 5 && y < 3)". Сначала пробуем
+        // как сравнение, а если не вышло - возвращаем закладку и читаем как условие
+        int start = _pos;
+
+        try
+        {
+            return ParseComparison();
+        }
+        catch (ParseException)
+        {
+            _pos = start;
+        }
+
+        Advance();
+        Condition inner = ParseCondition();
+        Expect(TokenType.RightParen, "Ожидалась закрывающая скобка ')'");
+        return inner;
+    }
+
+    /// <summary>
+    /// Парсит сравнение двух выражений, например x + 1 > 5.
+    /// </summary>
+    /// <returns>Узел RelationalCondition.</returns>
+    /// <exception cref="ParseException">Нет знака сравнения или выражения записаны некорректно.</exception>
+    private Condition ParseComparison()
+    {
+        Expr left = ParseExpression();
+
+        if (!RelationalOps.TryGetValue(Current.Type, out RelationalOp op))
+            throw new ParseException(
+                $"Ожидался знак сравнения (==, !=, <, <=, >, >=), а найдено {Describe(Current)}",
+                Current.Position);
+
+        Advance();
+
+        Expr right = ParseExpression();
+        return new RelationalCondition(left, op, right);
     }
 
     /// <summary>
