@@ -9,7 +9,7 @@ public abstract record Expr
 }
 
 /// <summary>
-/// Числовая константа (литерал) в выражении.
+/// Числовая константа в выражении.
 /// </summary>
 /// <param name="Value">Вещественное значение константы.</param>
 public record NumberExpr(double Value) : Expr
