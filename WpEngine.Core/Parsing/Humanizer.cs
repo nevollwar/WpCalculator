@@ -24,6 +24,104 @@ public static class Humanizer
     };
 
     /// <summary>
+    /// Описывает триаду Хоара {Pre} P {Post} словами.
+    /// </summary>
+    /// <param name="pre">Предусловие.</param>
+    /// <param name="program">Программа.</param>
+    /// <param name="post">Постусловие.</param>
+    /// <returns>Текст вида "Если перед выполнением программы "P" верно: ..., то после её выполнения будет верно: ...".</returns>
+    public static string DescribeTriad(Condition pre, Statement program, Condition post) =>
+        $"Если перед выполнением программы \"{Format(program)}\" верно: {Describe(pre)}, " +
+        $"то после её выполнения будет верно: {Describe(post)}.";
+
+    /// <summary>
+    /// Записывает условие краткой нотацией, например "x > 5 && y == 4".
+    /// Скобки ставит только там, где они нужны для порядка действий.
+    /// </summary>
+    /// <param name="condition">Условие.</param>
+    /// <returns>Краткая запись, которую можно снова разобрать парсером.</returns>
+    /// <exception cref="ArgumentException">Неизвестный тип условия.</exception>
+    public static string Format(Condition condition) => condition switch
+    {
+        RelationalCondition relational =>
+            $"{FormatExpr(relational.Left)} {RelationalSymbol(relational.Op)} {FormatExpr(relational.Right)}",
+        LogicalCondition logical => FormatLogical(logical),
+        NotCondition not => not.Inner is BooleanLiteralCondition
+            ? $"!{Format(not.Inner)}"
+            : $"!({Format(not.Inner)})",
+        BooleanLiteralCondition literal => literal.Value ? "true" : "false",
+        _ => throw new ArgumentException($"Неизвестный тип условия: {condition.GetType().Name}")
+    };
+
+    /// <summary>
+    /// Записывает программу в одну строку, в том же виде, в котором её вводят.
+    /// </summary>
+    /// <param name="statement">Программа или её часть.</param>
+    /// <returns>Строка вида "x := x + 10; y := x + 1".</returns>
+    /// <exception cref="ArgumentException">Неизвестный тип оператора.</exception>
+    public static string Format(Statement statement) => statement switch
+    {
+        AssignmentStatement assignment => $"{assignment.Variable} := {FormatExpr(assignment.Value)}",
+        SequenceStatement sequence => string.Join("; ", sequence.Statements.Select(s => Format(s))),
+        IfStatement ifStatement =>
+            $"if ({Format(ifStatement.Condition)}) {{ {Format(ifStatement.ThenBranch)} }} " +
+            $"else {{ {Format(ifStatement.ElseBranch)} }}",
+        _ => throw new ArgumentException($"Неизвестный тип оператора: {statement.GetType().Name}")
+    };
+
+    /// <summary>
+    /// Записывает два условия, соединённые "&amp;&amp;" или "||".
+    /// </summary>
+    /// <param name="condition">Составное условие.</param>
+    /// <returns>Строка вида "A &amp;&amp; B".</returns>
+    private static string FormatLogical(LogicalCondition condition)
+    {
+        string symbol = condition.Op == LogicalOp.And ? "&&" : "||";
+        int priority = LogicalPriority(condition);
+
+        string left = Format(condition.Left);
+        string right = Format(condition.Right);
+
+        // Слева скобки нужны, если там связка слабее: "(a || b) && c"
+        if (LogicalPriority(condition.Left) < priority)
+            left = $"({left})";
+
+        // Справа скобки нужны и при равном приоритете, как и в арифметике
+        if (LogicalPriority(condition.Right) <= priority)
+            right = $"({right})";
+
+        return $"{left} {symbol} {right}";
+    }
+
+    /// <summary>
+    /// Определяет приоритет условия: чем больше число, тем раньше оно разбирается.
+    /// </summary>
+    /// <param name="condition">Условие.</param>
+    /// <returns>1 для "||", 2 для "&amp;&amp;", 3 для всего остального.</returns>
+    private static int LogicalPriority(Condition condition) => condition switch
+    {
+        LogicalCondition { Op: LogicalOp.Or } => 1,
+        LogicalCondition => 2,
+        _ => 3
+    };
+
+    /// <summary>
+    /// Возвращает знак сравнения в краткой нотации.
+    /// </summary>
+    /// <param name="op">Операция сравнения.</param>
+    /// <returns>Один из знаков: ==, !=, &lt;, &lt;=, &gt;, &gt;=.</returns>
+    private static string RelationalSymbol(RelationalOp op) => op switch
+    {
+        RelationalOp.Equal => "==",
+        RelationalOp.NotEqual => "!=",
+        RelationalOp.Less => "<",
+        RelationalOp.LessOrEqual => "<=",
+        RelationalOp.Greater => ">",
+        RelationalOp.GreaterOrEqual => ">=",
+        _ => throw new ArgumentException($"Неизвестная операция сравнения: {op}")
+    };
+
+    /// <summary>
     /// Описывает сравнение двух выражений.
     /// </summary>
     /// <param name="condition">Сравнение, например x + 1 &gt; 5.</param>
