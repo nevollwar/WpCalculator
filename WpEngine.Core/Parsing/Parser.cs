@@ -280,6 +280,140 @@ public class Parser
     }
 
     /// <summary>
+    /// Парсит программу целиком: операторы, разделённые ";".
+    /// </summary>
+    /// <returns>Один оператор, если он единственный, иначе SequenceStatement.</returns>
+    /// <exception cref="ParseException">Программа записана некорректно.</exception>
+    public Statement ParseProgram()
+    {
+        Statement program = ParseStatementList();
+
+        // Список мог закончиться раньше конца текста, например на лишней "}"
+        ExpectEnd();
+        return program;
+    }
+
+    /// <summary>
+    /// Проверяет, что весь текст разобран и дальше ничего нет.
+    /// </summary>
+    /// <exception cref="ParseException">После разобранной части остался лишний текст.</exception>
+    public void ExpectEnd()
+    {
+        Expect(TokenType.End, "Ожидался конец текста");
+    }
+
+    /// <summary>
+    /// Парсит список операторов, разделённых ";". Заканчивается на "}" или на конце текста.
+    /// После последнего оператора ";" можно не ставить, а после if-else можно не ставить нигде.
+    /// </summary>
+    /// <returns>Один оператор, если он единственный, иначе SequenceStatement.</returns>
+    /// <exception cref="ParseException">Оператор записан некорректно или пропущена ";".</exception>
+    private Statement ParseStatementList()
+    {
+        var statements = new List<Statement>();
+
+        while (true)
+        {
+            Statement statement = ParseStatement();
+            statements.Add(statement);
+
+            // Точка с запятой после оператора необязательна, но если есть - пропускаем
+            bool hasSemicolon = Current.Type == TokenType.Semicolon;
+            if (hasSemicolon)
+                Advance();
+
+            // Список закончился
+            if (Current.Type is TokenType.End or TokenType.RightBrace)
+                break;
+
+            // Дальше идёт ещё оператор, а разделителя нет. Для if-else это допустимо,
+            // потому что его и так закрывает "}"
+            if (!hasSemicolon && statement is not IfStatement)
+                throw new ParseException(
+                    $"Ожидалась ';' между операторами, а найдено {Describe(Current)}",
+                    Current.Position);
+        }
+
+        return statements.Count == 1 ? statements[0] : new SequenceStatement(statements);
+    }
+
+    /// <summary>
+    /// Парсит один оператор: присваивание или ветвление if-else.
+    /// </summary>
+    /// <returns>AssignmentStatement или IfStatement.</returns>
+    /// <exception cref="ParseException">Оператор записан некорректно.</exception>
+    private Statement ParseStatement()
+    {
+        if (Current.Type != TokenType.Identifier)
+            throw new ParseException($"Ожидался оператор, а найдено {Describe(Current)}", Current.Position);
+
+        if (Current.Text == "if")
+            return ParseIf();
+
+        // else без своего if
+        if (Current.Text == "else")
+            throw new ParseException("Найдено else без соответствующего if", Current.Position);
+
+        return ParseAssignment();
+    }
+
+    /// <summary>
+    /// Парсит присваивание: имя, ":=" и выражение.
+    /// </summary>
+    /// <returns>Узел AssignmentStatement.</returns>
+    /// <exception cref="ParseException">Присваивание записано некорректно.</exception>
+    private Statement ParseAssignment()
+    {
+        Token name = Advance();
+        Expect(TokenType.Assign, $"Ожидалось ':=' после '{name.Text}'");
+
+        Expr value = ParseExpression();
+        return new AssignmentStatement(name.Text, value);
+    }
+
+    /// <summary>
+    /// Парсит ветвление: if (условие) { ... } else { ... }. Ветка else обязательна.
+    /// </summary>
+    /// <returns>Узел IfStatement.</returns>
+    /// <exception cref="ParseException">Ветвление записано некорректно.</exception>
+    private Statement ParseIf()
+    {
+        // Пропуск слова if
+        Advance();
+
+        Expect(TokenType.LeftParen, "Ожидалась '(' после if");
+        Condition condition = ParseCondition();
+        Expect(TokenType.RightParen, "Ожидалась ')' после условия");
+
+        Statement thenBranch = ParseBlock();
+
+        // Поддерживается только полная форма, поэтому else обязателен
+        if (Current.Type != TokenType.Identifier || Current.Text != "else")
+            throw new ParseException(
+                $"Ожидалось else (нужна полная форма if-else), а найдено {Describe(Current)}",
+                Current.Position);
+
+        Advance();
+
+        Statement elseBranch = ParseBlock();
+        return new IfStatement(condition, thenBranch, elseBranch);
+    }
+
+    /// <summary>
+    /// Парсит блок операторов в фигурных скобках: { ... }.
+    /// </summary>
+    /// <returns>Один оператор, если он единственный, иначе SequenceStatement.</returns>
+    /// <exception cref="ParseException">Блок пустой или записан некорректно.</exception>
+    private Statement ParseBlock()
+    {
+        Expect(TokenType.LeftBrace, "Ожидалась '{'");
+        Statement body = ParseStatementList();
+        Expect(TokenType.RightBrace, "Ожидалась '}'");
+
+        return body;
+    }
+
+    /// <summary>
     /// Возвращает текущий токен и переходит к следующему. На токене End остаётся на месте.
     /// </summary>
     /// <returns>Токен, который был текущим до вызова.</returns>
