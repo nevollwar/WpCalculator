@@ -17,4 +17,8 @@
     <ProjectReference Include="..\WpEngine.Core\WpEngine.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="WpfMath" Version="2.1.0" />
+  </ItemGroup>
+
 </Project>
