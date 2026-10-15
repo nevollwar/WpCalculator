@@ -1,12 +1,794 @@
-﻿<Window x:Class="WpEngine.UI.MainWindow"
+<Window x:Class="WpEngine.UI.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:WpEngine.UI"
+        xmlns:vm="clr-namespace:WpEngine.UI.ViewModels"
+        xmlns:conv="clr-namespace:WpEngine.UI.Converters"
+        xmlns:math="clr-namespace:WpfMath.Controls;assembly=WpfMath"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
-    <Grid>
+        Title="Калькулятор слабейшего предусловия (wp)"
+        Height="850" Width="1280"
+        MinHeight="650" MinWidth="980"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BgCanvas}"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        RenderOptions.ClearTypeHint="Enabled"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        ToolTipService.InitialShowDelay="220"
+        ToolTipService.BetweenShowDelay="100"
+        ToolTipService.ShowDuration="60000">
 
+    <Window.DataContext>
+        <vm:MainViewModel />
+    </Window.DataContext>
+
+    <Window.InputBindings>
+        <KeyBinding Key="Return" Modifiers="Ctrl" Command="{Binding CalculateCommand}" />
+    </Window.InputBindings>
+
+    <Window.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+        <conv:BoolToVisibilityConverter x:Key="InvBoolToVis" Invert="True" />
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="30" />
+        </Grid.RowDefinitions>
+
+        <!-- Верхняя панель в стиле Google Workspace -->
+        <Grid Grid.Row="0" Margin="22,14,22,6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Заголовок -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,20,0">
+                <TextBlock Text="Слабейшее предусловие"
+                           FontFamily="{StaticResource DisplayFont}"
+                           FontWeight="SemiBold"
+                           FontSize="16.5"
+                           Foreground="{StaticResource TextPrimary}"
+                           VerticalAlignment="Center" />
+
+                <Border Style="{StaticResource HintBadge}" Margin="9,0,0,0">
+                    <TextBlock Text="wp(P, R) ?" FontFamily="{StaticResource CodeFont}" FontWeight="SemiBold" FontSize="11.5" Foreground="{StaticResource BrandPrimary}" />
+                    <Border.ToolTip>
+                        <ToolTip Placement="Bottom" VerticalOffset="6">
+                            <StackPanel>
+                                <TextBlock Text="Слабейшее предусловие wp(P, R)"
+                                           FontFamily="{StaticResource DisplayFont}"
+                                           FontWeight="SemiBold"
+                                           FontSize="13"
+                                           Foreground="{StaticResource TextPrimary}"
+                                           Margin="0,0,0,4" />
+                                <TextBlock Text="Самое мягкое условие на входные переменные до старта программы P, гарантирующее истинность цели R после её завершения."
+                                           FontSize="12"
+                                           Foreground="{StaticResource TextSecondary}"
+                                           TextWrapping="Wrap"
+                                           LineHeight="17" />
+                                <Border Background="{StaticResource BgTonal}" CornerRadius="8" Padding="10,8" Margin="0,8,0,0">
+                                    <StackPanel>
+                                        <TextBlock Text="Пример из жизни" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource BrandPrimary}" Margin="0,0,0,2" />
+                                        <TextBlock Text="Поезд отправляется в 19:00 (цель R), дорога занимает 40 минут (программа P). Слабейшее предусловие wp — выйти из дома не позже 18:20."
+                                                   FontSize="11.5"
+                                                   Foreground="{StaticResource TextPrimary}"
+                                                   TextWrapping="Wrap"
+                                                   LineHeight="16" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </ToolTip>
+                    </Border.ToolTip>
+                </Border>
+            </StackPanel>
+
+            <!-- Чипы выбора примеров (Material 3 Filter Chips) -->
+            <ItemsControl Grid.Column="1" ItemsSource="{Binding Presets}" VerticalAlignment="Center">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal" VerticalAlignment="Center" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Button Content="{Binding Title}"
+                                Style="{StaticResource PresetChipButton}"
+                                Margin="0,2,7,2"
+                                ToolTipService.Placement="Bottom"
+                                ToolTipService.VerticalOffset="6"
+                                Command="{Binding DataContext.SelectPresetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding}">
+                            <Button.ToolTip>
+                                <ToolTip>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Title}"
+                                                   FontFamily="{StaticResource DisplayFont}"
+                                                   FontWeight="SemiBold"
+                                                   FontSize="13"
+                                                   Foreground="{StaticResource TextPrimary}"
+                                                   Margin="0,0,0,2" />
+                                        <TextBlock Text="{Binding Subtitle}"
+                                                   FontSize="11"
+                                                   FontWeight="Medium"
+                                                   Foreground="{StaticResource BrandPrimary}"
+                                                   Margin="0,0,0,5" />
+                                        <TextBlock Text="{Binding Description}"
+                                                   FontSize="12"
+                                                   Foreground="{StaticResource TextSecondary}"
+                                                   TextWrapping="Wrap"
+                                                   LineHeight="17" />
+                                        <Border Background="{StaticResource BgTonal}" CornerRadius="8" Padding="10,8" Margin="0,8,0,0">
+                                            <StackPanel>
+                                                <TextBlock Text="Пример из жизни" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource BrandPrimary}" Margin="0,0,0,2" />
+                                                <TextBlock Text="{Binding RealLifeAnalogy}"
+                                                           FontSize="11.5"
+                                                           Foreground="{StaticResource TextPrimary}"
+                                                           TextWrapping="Wrap"
+                                                           LineHeight="16" />
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                </ToolTip>
+                            </Button.ToolTip>
+                        </Button>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Действия -->
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
+                <Button Content="Очистить"
+                        Style="{StaticResource SecondaryButton}"
+                        Command="{Binding ClearCommand}"
+                        Margin="0,0,8,0" />
+                <Button Content="Рассчитать wp"
+                        Style="{StaticResource PrimaryButton}"
+                        Command="{Binding CalculateCommand}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Основная рабочая область (две карточки Google Surface) -->
+        <Grid Grid.Row="1" Margin="20,6,20,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1*" MinWidth="380" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="1.34*" MinWidth="460" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Левая карточка: входные данные -->
+            <Border Grid.Column="0"
+                    Background="{StaticResource BgPanel}"
+                    BorderBrush="{StaticResource BorderBase}"
+                    BorderThickness="1"
+                    CornerRadius="16"
+                    Padding="22,20"
+                    Effect="{StaticResource SurfaceShadow}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Блок постусловия -->
+                    <StackPanel Grid.Row="0" Margin="0,0,0,18">
+                        <Grid Margin="0,0,0,8">
+                            <TextBlock Text="Целевое постусловие (R)"
+                                       FontFamily="{StaticResource DisplayFont}"
+                                       FontWeight="SemiBold"
+                                       FontSize="14.5"
+                                       Foreground="{StaticResource TextPrimary}"
+                                       VerticalAlignment="Center" />
+
+                            <Border Style="{StaticResource HintBadge}"
+                                    HorizontalAlignment="Right"
+                                    ToolTipService.Placement="Right"
+                                    ToolTipService.HorizontalOffset="8">
+                                <TextBlock Text="? подсказка" FontSize="11" FontWeight="Medium" Foreground="{StaticResource BrandPrimary}" />
+                                <Border.ToolTip>
+                                    <ToolTip>
+                                        <StackPanel>
+                                            <TextBlock Text="Целевое постусловие (R / Post)" FontFamily="{StaticResource DisplayFont}" FontWeight="SemiBold" FontSize="13" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,4" />
+                                            <TextBlock Text="Логическое условие, которое обязано выполняться после завершения программы. Поддерживаются &gt;, &lt;, &gt;=, &lt;=, ==, !=, &amp;&amp;, ||, !." FontSize="12" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" LineHeight="17" />
+                                            <Border Background="{StaticResource BgTonal}" CornerRadius="8" Padding="10,8" Margin="0,8,0,0">
+                                                <StackPanel>
+                                                    <TextBlock Text="Пример из жизни" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource BrandPrimary}" Margin="0,0,0,2" />
+                                                    <TextBlock Text="После оплаты покупки баланс карты не должен уйти в минус (balance &gt;= 0)." FontSize="11.5" Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap" LineHeight="16" />
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+                                    </ToolTip>
+                                </Border.ToolTip>
+                            </Border>
+                        </Grid>
+
+                        <TextBox Text="{Binding PostConditionText, UpdateSourceTrigger=PropertyChanged}"
+                                 FontFamily="{StaticResource CodeFont}"
+                                 FontSize="14"
+                                 Margin="0,0,0,10" />
+
+                        <TextBlock Text="Описание цели простыми словами:"
+                                   FontFamily="{StaticResource MainFont}"
+                                   FontSize="12.5"
+                                   Foreground="{StaticResource TextSecondary}"
+                                   Margin="0,0,0,6" />
+
+                        <TextBox Text="{Binding PostConditionHumanText, UpdateSourceTrigger=PropertyChanged}"
+                                 FontSize="13" />
+                    </StackPanel>
+
+                    <!-- Блок редактора кода -->
+                    <Grid Grid.Row="1">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0" Margin="0,0,0,8">
+                            <TextBlock Text="Код программы (P)"
+                                       FontFamily="{StaticResource DisplayFont}"
+                                       FontWeight="SemiBold"
+                                       FontSize="14.5"
+                                       Foreground="{StaticResource TextPrimary}"
+                                       VerticalAlignment="Center" />
+
+                            <Border Style="{StaticResource HintBadge}"
+                                    HorizontalAlignment="Right"
+                                    ToolTipService.Placement="Right"
+                                    ToolTipService.HorizontalOffset="8">
+                                <TextBlock Text="? подсказка" FontSize="11" FontWeight="Medium" Foreground="{StaticResource BrandPrimary}" />
+                                <Border.ToolTip>
+                                    <ToolTip>
+                                        <StackPanel>
+                                            <TextBlock Text="Код программы (P)" FontFamily="{StaticResource DisplayFont}" FontWeight="SemiBold" FontSize="13" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,4" />
+                                            <TextBlock Text="Присваивания (x := e) и ветвления if (B) { S1 } else { S2 }. Анализируется снизу вверх: от последней строки к первой." FontSize="12" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" LineHeight="17" />
+                                            <Border Background="{StaticResource BgTonal}" CornerRadius="8" Padding="10,8" Margin="0,8,0,0">
+                                                <StackPanel>
+                                                    <TextBlock Text="Пример из жизни" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource BrandPrimary}" Margin="0,0,0,2" />
+                                                    <TextBlock Text="Как банковская выписка: чтобы узнать, сколько денег было до покупок, мы отматываем операции списания и кэшбэка от конца к началу." FontSize="11.5" Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap" LineHeight="16" />
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+                                    </ToolTip>
+                                </Border.ToolTip>
+                            </Border>
+                        </Grid>
+
+                        <!-- Редактор кода с нумерацией строк (1, 2, 3...) и подсветкой строки с ошибкой -->
+                        <Border x:Name="CodeEditorContainer"
+                                Grid.Row="1"
+                                Background="{StaticResource BgRecessed}"
+                                BorderBrush="{StaticResource BorderInput}"
+                                BorderThickness="1"
+                                CornerRadius="10"
+                                ClipToBounds="True">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="46" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Левая колонка: номера строк (1, 2, 3...) -->
+                                <Border Grid.Column="0"
+                                        Background="#EDF2FA"
+                                        BorderBrush="#DCE3EE"
+                                        BorderThickness="0,0,1,0"
+                                        ClipToBounds="True">
+                                    <ItemsControl ItemsSource="{Binding EditorLines}" Margin="0,10,0,10">
+                                        <ItemsControl.RenderTransform>
+                                            <TranslateTransform x:Name="GutterScrollTransform" Y="0" />
+                                        </ItemsControl.RenderTransform>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border x:Name="gutterRow"
+                                                        Background="Transparent"
+                                                        BorderBrush="Transparent"
+                                                        BorderThickness="3,0,0,0"
+                                                        Padding="0,0,10,0"
+                                                        Cursor="Hand"
+                                                        ToolTipService.Placement="Right"
+                                                        ToolTipService.HorizontalOffset="8"
+                                                        MouseLeftButtonDown="GutterLine_MouseLeftButtonDown"
+                                                        Tag="{Binding LineNumber}">
+                                                    <TextBlock x:Name="gutterNum"
+                                                               Text="{Binding LineNumber}"
+                                                               FontFamily="{StaticResource CodeFont}"
+                                                               FontSize="14"
+                                                               Foreground="{StaticResource TextMuted}"
+                                                               HorizontalAlignment="Right" />
+                                                </Border>
+                                                <DataTemplate.Triggers>
+                                                    <DataTrigger Binding="{Binding IsError}" Value="True">
+                                                        <Setter TargetName="gutterRow" Property="Background" Value="#FAD2CF" />
+                                                        <Setter TargetName="gutterRow" Property="BorderBrush" Value="#D93025" />
+                                                        <Setter TargetName="gutterNum" Property="Foreground" Value="#B3261E" />
+                                                        <Setter TargetName="gutterNum" Property="FontWeight" Value="Bold" />
+                                                        <Setter TargetName="gutterRow" Property="ToolTip">
+                                                            <Setter.Value>
+                                                                <ToolTip>
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="Ошибка в этой строке" FontFamily="{StaticResource DisplayFont}" FontWeight="SemiBold" FontSize="12.5" Foreground="#B3261E" Margin="0,0,0,3" />
+                                                                        <TextBlock Text="{Binding ErrorMessage}" FontSize="12" Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap" LineHeight="16" />
+                                                                    </StackPanel>
+                                                                </ToolTip>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </DataTrigger>
+                                                </DataTemplate.Triggers>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Border>
+
+                                <!-- Правая колонка: подсветка ошибочной строки + сам текстовый редактор -->
+                                <Grid Grid.Column="1" ClipToBounds="True">
+                                    <!-- Фоновая подсветка всей строки с ошибкой -->
+                                    <ItemsControl ItemsSource="{Binding EditorLines}"
+                                                  Margin="0,10,0,10"
+                                                  IsHitTestVisible="False">
+                                        <ItemsControl.RenderTransform>
+                                            <TranslateTransform x:Name="HighlightScrollTransform" Y="0" />
+                                        </ItemsControl.RenderTransform>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border x:Name="lineHighlight" Background="Transparent">
+                                                    <TextBlock Text=" " FontFamily="{StaticResource CodeFont}" FontSize="14" />
+                                                </Border>
+                                                <DataTemplate.Triggers>
+                                                    <DataTrigger Binding="{Binding IsError}" Value="True">
+                                                        <Setter TargetName="lineHighlight" Property="Background" Value="#FDE7E9" />
+                                                    </DataTrigger>
+                                                </DataTemplate.Triggers>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <!-- Редактор кода -->
+                                    <TextBox x:Name="ProgramCodeEditor"
+                                             Text="{Binding ProgramCodeText, UpdateSourceTrigger=PropertyChanged}"
+                                             Style="{StaticResource CodeEditorBox}"
+                                             ScrollViewer.ScrollChanged="CodeEditor_ScrollChanged"
+                                             GotFocus="ProgramCodeEditor_GotFocus"
+                                             LostFocus="ProgramCodeEditor_LostFocus" />
+                                </Grid>
+                            </Grid>
+                        </Border>
+
+                        <!-- Чипы быстрой вставки (подсказка открывается строго СВЕРХУ кнопки, не перекрывая ряд) -->
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,10,0,0">
+                            <TextBlock Text="Быстрая вставка:"
+                                       FontSize="12.5"
+                                       Foreground="{StaticResource TextMuted}"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,10,0" />
+
+                            <Button Content=":=" Style="{StaticResource SmallButton}" Margin="0,0,6,0"
+                                    ToolTipService.Placement="Top" ToolTipService.VerticalOffset="-6"
+                                    Command="{Binding InsertSnippetCommand}" CommandParameter="x := ">
+                                <Button.ToolTip>
+                                    <ToolTip>
+                                        <StackPanel>
+                                            <TextBlock Text="Присваивание (x := e)" FontFamily="{StaticResource DisplayFont}" FontWeight="SemiBold" FontSize="12.5" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,3" />
+                                            <TextBlock Text="Заменяет переменную x в постусловии R на выражение e." FontSize="11.5" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </ToolTip>
+                                </Button.ToolTip>
+                            </Button>
+
+                            <Button Content="if-else" Style="{StaticResource SmallButton}" Margin="0,0,6,0"
+                                    ToolTipService.Placement="Top" ToolTipService.VerticalOffset="-6"
+                                    Command="{Binding InsertSnippetCommand}" CommandParameter="if (x &gt;= 0) {&#x0a;    y := 1;&#x0a;} else {&#x0a;    y := 0;&#x0a;}">
+                                <Button.ToolTip>
+                                    <ToolTip>
+                                        <StackPanel>
+                                            <TextBlock Text="Условное ветвление (if-else)" FontFamily="{StaticResource DisplayFont}" FontWeight="SemiBold" FontSize="12.5" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,3" />
+                                            <TextBlock Text="Проверяет обе ветки: (B ∧ wp(S1, R)) ∨ (¬B ∧ wp(S2, R))." FontSize="11.5" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </ToolTip>
+                                </Button.ToolTip>
+                            </Button>
+
+                            <Button Content="abs()" Style="{StaticResource SmallButton}" Margin="0,0,6,0"
+                                    ToolTipService.Placement="Top" ToolTipService.VerticalOffset="-6"
+                                    Command="{Binding InsertSnippetCommand}" CommandParameter="abs()">
+                                <Button.ToolTip>
+                                    <ToolTip>
+                                        <StackPanel>
+                                            <TextBlock Text="Модуль числа abs(x)" FontFamily="{StaticResource DisplayFont}" FontWeight="SemiBold" FontSize="12.5" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,3" />
+                                            <TextBlock Text="Абсолютная величина выражения без учёта знака." FontSize="11.5" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </ToolTip>
+                                </Button.ToolTip>
+                            </Button>
+
+                            <Button Content="&amp;&amp;" Style="{StaticResource SmallButton}" Margin="0,0,6,0"
+                                    ToolTipService.Placement="Top" ToolTipService.VerticalOffset="-6"
+                                    Command="{Binding InsertSnippetCommand}" CommandParameter=" &amp;&amp; ">
+                                <Button.ToolTip>
+                                    <ToolTip>
+                                        <StackPanel>
+                                            <TextBlock Text="Логическое И (&amp;&amp; / ∧)" FontFamily="{StaticResource DisplayFont}" FontWeight="SemiBold" FontSize="12.5" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,3" />
+                                            <TextBlock Text="Одновременное выполнение обоих условий." FontSize="11.5" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </ToolTip>
+                                </Button.ToolTip>
+                            </Button>
+
+                            <Button Content="||" Style="{StaticResource SmallButton}" Margin="0,0,6,0"
+                                    ToolTipService.Placement="Top" ToolTipService.VerticalOffset="-6"
+                                    Command="{Binding InsertSnippetCommand}" CommandParameter=" || ">
+                                <Button.ToolTip>
+                                    <ToolTip>
+                                        <StackPanel>
+                                            <TextBlock Text="Логическое ИЛИ (|| / ∨)" FontFamily="{StaticResource DisplayFont}" FontWeight="SemiBold" FontSize="12.5" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,3" />
+                                            <TextBlock Text="Выполнение хотя бы одного из двух условий." FontSize="11.5" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </ToolTip>
+                                </Button.ToolTip>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Сообщение об ошибке с номером строки и проблемным фрагментом -->
+                    <Border Grid.Row="2"
+                            Margin="0,12,0,0"
+                            Background="#FCE8E6"
+                            BorderBrush="#F6AEA9"
+                            BorderThickness="1"
+                            CornerRadius="10"
+                            Padding="14,10"
+                            Cursor="Hand"
+                            MouseLeftButtonDown="ErrorBanner_MouseLeftButtonDown"
+                            Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+                        <StackPanel>
+                            <TextBlock Text="{Binding ErrorHeaderText}"
+                                       FontFamily="{StaticResource DisplayFont}"
+                                       FontWeight="SemiBold"
+                                       FontSize="13"
+                                       Foreground="#B3261E"
+                                       Margin="0,0,0,3" />
+                            <TextBlock Text="{Binding ErrorMessage}"
+                                       Foreground="#8C1D18"
+                                       FontSize="12.5"
+                                       TextWrapping="Wrap" />
+                            <Border Background="#FFFFFF"
+                                    BorderBrush="#F6AEA9"
+                                    BorderThickness="1"
+                                    CornerRadius="6"
+                                    Padding="10,5"
+                                    Margin="0,7,0,0"
+                                    Visibility="{Binding HasErrorSnippet, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="{Binding ErrorLineSnippet}"
+                                           FontFamily="{StaticResource CodeFont}"
+                                           FontSize="12.5"
+                                           Foreground="#B3261E"
+                                           TextWrapping="Wrap" />
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- Правая карточка: результаты вычисления -->
+            <Border Grid.Column="2"
+                    Background="{StaticResource BgPanel}"
+                    BorderBrush="{StaticResource BorderBase}"
+                    BorderThickness="1"
+                    CornerRadius="16"
+                    Padding="22,20"
+                    Effect="{StaticResource SurfaceShadow}">
+                <Grid>
+                    <!-- Пустое состояние -->
+                    <StackPanel Visibility="{Binding HasResult, Converter={StaticResource InvBoolToVis}}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                MaxWidth="360">
+                        <Border Background="{StaticResource BgTonal}" CornerRadius="16" Padding="18,10" HorizontalAlignment="Center" Margin="0,0,0,14">
+                            <TextBlock Text="wp(P, R)" FontFamily="{StaticResource CodeFont}" FontSize="17" FontWeight="SemiBold" Foreground="{StaticResource BrandPrimary}" />
+                        </Border>
+                        <TextBlock Text="Готов к вычислению"
+                                   FontFamily="{StaticResource DisplayFont}"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimary}"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,0,0,6" />
+                        <TextBlock Text="Выберите один из примеров сверху или введите свой код слева и нажмите «Рассчитать wp»."
+                                   FontSize="13.5"
+                                   Foreground="{StaticResource TextSecondary}"
+                                   TextAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   LineHeight="19" />
+                    </StackPanel>
+
+                    <!-- Скролл результатов -->
+                    <ScrollViewer x:Name="ResultsScrollViewer"
+                                  PreviewMouseWheel="ResultsScrollViewer_PreviewMouseWheel"
+                                  Visibility="{Binding HasResult, Converter={StaticResource BoolToVis}}"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  Focusable="False">
+                        <StackPanel Margin="0,0,6,0">
+
+                            <!-- 1. Главный тональный блок: Слабейшее предусловие -->
+                            <Border Margin="0,0,0,14"
+                                    Background="{StaticResource BgTonal}"
+                                    CornerRadius="14"
+                                    Padding="18,16">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,10">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="Слабейшее предусловие wp(P, R)"
+                                                       FontFamily="{StaticResource DisplayFont}"
+                                                       FontWeight="SemiBold"
+                                                       FontSize="14.5"
+                                                       Foreground="{StaticResource TextPrimary}"
+                                                       VerticalAlignment="Center" />
+
+                                            <Border Style="{StaticResource HintBadge}" Background="#FFFFFF" Margin="9,0,0,0">
+                                                <TextBlock Text="? как читать" FontSize="11" FontWeight="Medium" Foreground="{StaticResource BrandPrimary}" />
+                                                <Border.ToolTip>
+                                                    <ToolTip>
+                                                        <StackPanel>
+                                                            <TextBlock Text="Итоговая формула wp(P, R)" FontFamily="{StaticResource DisplayFont}" FontWeight="SemiBold" FontSize="13" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,4" />
+                                                            <TextBlock Text="Если начальные переменные удовлетворяют этой формуле, программа гарантированно завершится без ошибок и выполнит цель R." FontSize="12" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" LineHeight="17" />
+                                                        </StackPanel>
+                                                    </ToolTip>
+                                                </Border.ToolTip>
+                                            </Border>
+                                        </StackPanel>
+
+                                        <Button Content="Скопировать"
+                                                Style="{StaticResource TonalButton}"
+                                                HorizontalAlignment="Right"
+                                                Command="{Binding CopyWpCommand}" />
+                                    </Grid>
+
+                                    <Border Background="#FFFFFF"
+                                            BorderBrush="{StaticResource BorderBase}"
+                                            BorderThickness="1"
+                                            CornerRadius="10"
+                                            Padding="18,16"
+                                            Margin="0,0,0,10">
+                                        <math:FormulaControl Formula="{Binding FinalConditionLatex}"
+                                                             Scale="19"
+                                                             Foreground="#1F1F1F"
+                                                             HorizontalAlignment="Center"
+                                                             VerticalAlignment="Center"
+                                                             SnapsToDevicePixels="True"
+                                                             UseLayoutRounding="True" />
+                                    </Border>
+
+                                    <TextBlock Text="{Binding FinalConditionHuman}"
+                                               FontSize="13"
+                                               Foreground="{StaticResource TextSecondary}"
+                                               TextWrapping="Wrap"
+                                               LineHeight="18"
+                                               Margin="0,0,0,10" />
+
+                                    <!-- Наглядная карточка: Пример из жизни -->
+                                    <Border Background="#FFFFFF"
+                                            BorderBrush="#D3E3FD"
+                                            BorderThickness="1"
+                                            CornerRadius="10"
+                                            Padding="13,10">
+                                        <StackPanel>
+                                            <TextBlock Text="Аналогия из жизни"
+                                                       FontFamily="{StaticResource DisplayFont}"
+                                                       FontWeight="SemiBold"
+                                                       FontSize="12"
+                                                       Foreground="{StaticResource BrandPrimary}"
+                                                       Margin="0,0,0,3" />
+                                            <TextBlock Text="{Binding CurrentRealLifeAnalogy}"
+                                                       FontSize="12.5"
+                                                       Foreground="{StaticResource TextPrimary}"
+                                                       TextWrapping="Wrap"
+                                                       LineHeight="18" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 2. Триада Хоара -->
+                            <Border Margin="0,0,0,14"
+                                    Background="#FFFFFF"
+                                    BorderBrush="{StaticResource BorderBase}"
+                                    BorderThickness="1"
+                                    CornerRadius="14"
+                                    Padding="18,14">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,10">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="Триада Хоара"
+                                                       FontFamily="{StaticResource DisplayFont}"
+                                                       FontWeight="SemiBold"
+                                                       FontSize="14.5"
+                                                       Foreground="{StaticResource TextPrimary}"
+                                                       VerticalAlignment="Center" />
+
+                                            <Border Style="{StaticResource HintBadge}" Margin="9,0,0,0">
+                                                <TextBlock Text="{}{ Pre } P { Post } ?" FontFamily="{StaticResource CodeFont}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource BrandPrimary}" />
+                                                <Border.ToolTip>
+                                                    <ToolTip>
+                                                        <StackPanel>
+                                                            <TextBlock Text="Триада Хоара { Pre } P { Post }" FontFamily="{StaticResource DisplayFont}" FontWeight="SemiBold" FontSize="13" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,4" />
+                                                            <TextBlock Text="Контракт корректности: если до старта выполнено {Pre}, то после выполнения кода P гарантированно выполняется {Post}." FontSize="12" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" LineHeight="17" />
+                                                            <Border Background="{StaticResource BgTonal}" CornerRadius="8" Padding="10,8" Margin="0,8,0,0">
+                                                                <StackPanel>
+                                                                    <TextBlock Text="Пример из жизни" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource BrandPrimary}" Margin="0,0,0,2" />
+                                                                    <TextBlock Text="{}{Pre: есть билет и паспорт} → P: посадка и рейс → {Post: пассажир прилетел в пункт назначения}." FontSize="11.5" Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap" LineHeight="16" />
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </StackPanel>
+                                                    </ToolTip>
+                                                </Border.ToolTip>
+                                            </Border>
+                                        </StackPanel>
+
+                                        <Button Content="Скопировать триаду"
+                                                Style="{StaticResource TonalButton}"
+                                                HorizontalAlignment="Right"
+                                                Command="{Binding CopyTriadCommand}" />
+                                    </Grid>
+
+                                    <Border Background="{StaticResource BgRecessed}"
+                                            BorderBrush="{StaticResource BorderBase}"
+                                            BorderThickness="1"
+                                            CornerRadius="10"
+                                            Padding="14,12">
+                                        <TextBox Text="{Binding HoareTriadText, Mode=OneWay}"
+                                                 Style="{StaticResource ReadOnlyCodeBox}"
+                                                 FontSize="13"
+                                                 TextWrapping="Wrap" />
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 3. Условие определенности (деление) -->
+                            <Border Margin="0,0,0,14"
+                                    Background="#FEF7E0"
+                                    BorderBrush="#F5DDA9"
+                                    BorderThickness="1"
+                                    CornerRadius="12"
+                                    Padding="16,11"
+                                    Visibility="{Binding HasDivisionConstraint, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="{Binding DivisionConstraintMessage}"
+                                           Foreground="#5F370E"
+                                           FontSize="13"
+                                           TextWrapping="Wrap" />
+                            </Border>
+
+                            <!-- 4. Пошаговое вычисление -->
+                            <StackPanel Orientation="Horizontal" Margin="2,2,0,10">
+                                <TextBlock Text="Пошаговое вычисление (с конца к началу)"
+                                           FontFamily="{StaticResource DisplayFont}"
+                                           FontWeight="SemiBold"
+                                           FontSize="14.5"
+                                           Foreground="{StaticResource TextPrimary}"
+                                           VerticalAlignment="Center" />
+
+                                <Border Style="{StaticResource HintBadge}" Margin="9,0,0,0">
+                                    <TextBlock Text="? принцип" FontSize="11" FontWeight="Medium" Foreground="{StaticResource BrandPrimary}" />
+                                    <Border.ToolTip>
+                                        <ToolTip>
+                                            <StackPanel>
+                                                <TextBlock Text="Обратный ход: wp(S1; S2, R) = wp(S1, wp(S2, R))" FontFamily="{StaticResource DisplayFont}" FontWeight="SemiBold" FontSize="13" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,4" />
+                                                <TextBlock Text="Мы берём целевое постусловие R и поднимаемся вверх по строкам программы от последнего оператора к первому." FontSize="12" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" LineHeight="17" />
+                                                <Border Background="{StaticResource BgTonal}" CornerRadius="8" Padding="10,8" Margin="0,8,0,0">
+                                                    <StackPanel>
+                                                        <TextBlock Text="Пример из жизни" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource BrandPrimary}" Margin="0,0,0,2" />
+                                                        <TextBlock Text="Вылет в 12:00 → конец посадки в 11:20 → быть в аэропорту к 10:00 → выехать на такси в 09:15." FontSize="11.5" Foreground="{StaticResource TextPrimary}" TextWrapping="Wrap" LineHeight="16" />
+                                                    </StackPanel>
+                                                </Border>
+                                            </StackPanel>
+                                        </ToolTip>
+                                    </Border.ToolTip>
+                                </Border>
+                            </StackPanel>
+
+                            <ItemsControl ItemsSource="{Binding TraceSteps}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Margin="0,0,0,10"
+                                                Background="#FFFFFF"
+                                                BorderBrush="{StaticResource BorderBase}"
+                                                BorderThickness="1"
+                                                CornerRadius="12"
+                                                Padding="16,14">
+                                            <StackPanel>
+                                                <Grid Margin="0,0,0,8">
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <Border Width="24" Height="24" CornerRadius="12" Background="{StaticResource BgPrimaryTonal}" Margin="0,0,9,0">
+                                                            <TextBlock Text="{Binding StepIndex}"
+                                                                       FontFamily="{StaticResource MainFont}"
+                                                                       FontSize="12"
+                                                                       FontWeight="SemiBold"
+                                                                       Foreground="#041E49"
+                                                                       HorizontalAlignment="Center"
+                                                                       VerticalAlignment="Center" />
+                                                        </Border>
+                                                        <TextBlock Text="{Binding StepBadge}"
+                                                                   FontFamily="{StaticResource MainFont}"
+                                                                   FontSize="13.5"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{StaticResource TextPrimary}"
+                                                                   VerticalAlignment="Center" />
+
+                                                        <Border Style="{StaticResource HintBadge}" Margin="8,0,0,0">
+                                                            <TextBlock Text="? пример" FontSize="10.5" FontWeight="Medium" Foreground="{StaticResource BrandPrimary}" />
+                                                            <Border.ToolTip>
+                                                                <ToolTip>
+                                                                    <StackPanel>
+                                                                        <TextBlock Text="{Binding StepBadge}" FontFamily="{StaticResource DisplayFont}" FontWeight="SemiBold" FontSize="12.5" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,3" />
+                                                                        <TextBlock Text="{Binding RealLifeHint}" FontSize="12" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" LineHeight="17" />
+                                                                    </StackPanel>
+                                                                </ToolTip>
+                                                            </Border.ToolTip>
+                                                        </Border>
+                                                    </StackPanel>
+
+                                                    <Border HorizontalAlignment="Right"
+                                                            Background="{StaticResource BgTonal}"
+                                                            CornerRadius="6"
+                                                            Padding="9,3">
+                                                        <TextBlock Text="{Binding StatementCode}"
+                                                                   FontFamily="{StaticResource CodeFont}"
+                                                                   FontSize="12.5"
+                                                                   Foreground="{StaticResource BrandPrimary}" />
+                                                    </Border>
+                                                </Grid>
+
+                                                <Border Background="{StaticResource BgRecessed}"
+                                                        BorderBrush="{StaticResource BorderBase}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="8"
+                                                        Padding="14,10"
+                                                        Margin="0,0,0,8">
+                                                    <math:FormulaControl Formula="{Binding IntermediateConditionLatex}"
+                                                                         Scale="16"
+                                                                         Foreground="#1F1F1F"
+                                                                         HorizontalAlignment="Left"
+                                                                         SnapsToDevicePixels="True"
+                                                                         UseLayoutRounding="True" />
+                                                </Border>
+
+                                                <TextBlock Text="{Binding Description}"
+                                                           FontSize="13"
+                                                           Foreground="{StaticResource TextSecondary}"
+                                                           TextWrapping="Wrap"
+                                                           LineHeight="18" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Нижняя строка состояния -->
+        <Grid Grid.Row="2" Margin="24,0">
+            <TextBlock Text="{Binding StatusMessage}"
+                       FontSize="12"
+                       Foreground="{StaticResource TextMuted}"
+                       VerticalAlignment="Center" />
+            <TextBlock Text="Наведите на плашку «? подсказка» или на пример для разбора • Ctrl + Enter — расчёт"
+                       FontSize="12"
+                       Foreground="{StaticResource TextMuted}"
+                       HorizontalAlignment="Right"
+                       VerticalAlignment="Center" />
+        </Grid>
     </Grid>
 </Window>
