@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Input;
+using Microsoft.Win32;
 using WpEngine.Core.AST;
 using WpEngine.Core.Contracts;
 using WpEngine.UI.Models;
@@ -23,6 +25,7 @@ public class MainViewModel : ViewModelBase
     private string _postConditionLatex = string.Empty;
     private string _currentRealLifeAnalogy = string.Empty;
     private string _statusMessage = "Готов к расчёту wp";
+    private string _elapsedTimeText = string.Empty;
     private string _errorHeaderText = string.Empty;
     private string _errorMessage = string.Empty;
     private string _errorLineSnippet = string.Empty;
@@ -43,7 +46,6 @@ public class MainViewModel : ViewModelBase
         get => _postConditionText;
         set => SetProperty(ref _postConditionText, value);
     }
-
     public string PostConditionHumanText
     {
         get => _postConditionHumanText;
@@ -114,6 +116,12 @@ public class MainViewModel : ViewModelBase
         set => SetProperty(ref _statusMessage, value);
     }
 
+    public string ElapsedTimeText
+    {
+        get => _elapsedTimeText;
+        set => SetProperty(ref _elapsedTimeText, value);
+    }
+
     public string ErrorHeaderText
     {
         get => _errorHeaderText;
@@ -168,6 +176,8 @@ public class MainViewModel : ViewModelBase
         set => SetProperty(ref _divisionConstraintMessage, value);
     }
 
+    // --- Свойства вкладки «Конструктор фрагмента» ---
+
     public PresetModel? SelectedPreset
     {
         get => _selectedPreset;
@@ -196,6 +206,7 @@ public class MainViewModel : ViewModelBase
     public ICommand CopyLatexCommand { get; }
     public ICommand InsertSnippetCommand { get; }
     public ICommand SelectPresetCommand { get; }
+    public ICommand ExportReportCommand { get; }
 
     public MainViewModel()
     {
@@ -213,6 +224,7 @@ public class MainViewModel : ViewModelBase
                 ExecuteCalculate();
             }
         });
+        ExportReportCommand = new RelayCommand(ExecuteExportReport, _ => HasResult);
 
         SyncEditorLines();
         InitPresets();
@@ -393,6 +405,8 @@ public class MainViewModel : ViewModelBase
             return;
         }
 
+        var stopwatch = Stopwatch.StartNew();
+
         WpEngine.Core.AST.Condition postAst;
         try
         {
@@ -488,7 +502,9 @@ public class MainViewModel : ViewModelBase
                 : string.Empty;
 
             HasResult = true;
-            StatusMessage = $"Расчёт выполнен (шагов: {result.Trace.Count})";
+            stopwatch.Stop();
+            ElapsedTimeText = $"{stopwatch.ElapsedMilliseconds} мс";
+            StatusMessage = $"Расчёт выполнен (шагов: {result.Trace.Count}) • {stopwatch.ElapsedMilliseconds} мс";
         }
         catch (Exception ex)
         {
@@ -591,6 +607,38 @@ public class MainViewModel : ViewModelBase
         {
             Clipboard.SetText($"$$ {FinalConditionLatex} $$");
             StatusMessage = "LaTeX-формула ($$ ... $$) скопирована в буфер обмена";
+        }
+    }
+
+    private void ExecuteExportReport(object? _)
+    {
+        if (!HasResult)
+        {
+            StatusMessage = "Сначала выполните расчёт wp перед экспортом";
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Title = "Экспорт отчёта wp",
+            Filter = "Markdown-файл (*.md)|*.md|Все файлы (*.*)|*.*",
+            DefaultExt = ".md",
+            FileName = $"wp_report_{DateTime.Now:yyyyMMdd_HHmm}"
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            try
+            {
+                ReportExportService.ExportToFile(this, dialog.FileName);
+                StatusMessage = $"Отчёт сохранён: {System.IO.Path.GetFileName(dialog.FileName)}";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Ошибка экспорта: {ex.Message}";
+                MessageBox.Show($"Не удалось сохранить файл:\n{ex.Message}", "Ошибка экспорта",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
         }
     }
 
