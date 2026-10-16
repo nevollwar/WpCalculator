@@ -1,11 +1,7 @@
-namespace WpEngine.Tests
-{
-    public class EngineTests
-    {
-        [Fact]
-        public void Test1()
-        {
-
-        }
-    }
-}
+// “есты разложены по отдельным файлам:
+//   LexerTests.cs            Ц разбивка текста на токены
+//   ParserTests.cs            Ц построение AST
+//   CodeParserTests.cs        Ц публичный фасад CodeParser
+//   HumanizerTests.cs         Ц форматирование и описание условий
+//   SubstitutionEngineTests.cs Ц подстановка и упрощение предикатов
+namespace WpEngine.Tests;
