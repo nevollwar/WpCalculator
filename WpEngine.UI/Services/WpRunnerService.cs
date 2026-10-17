@@ -1,17 +1,19 @@
 using System.Text;
 using WpEngine.Core.AST;
 using WpEngine.Core.Contracts;
+using WpEngine.Core.Parsing;
 using WpEngine.Core.Services;
 
 namespace WpEngine.UI.Services;
 
 /// <summary>
-/// Сервис синтаксического анализа и пошагового вычисления wp.
-/// Реализует контракты IWpEngine и ICodeParser для полной автономности UI.
+/// Сервис пошагового вычисления wp и подготовки LaTeX-представлений для UI.
+/// Использует парсер (CodeParser), генератор описаний (Humanizer) и движок подстановки (SubstitutionEngine) из WpEngine.Core.
 /// </summary>
 public class WpRunnerService : IWpEngine, ICodeParser
 {
     private readonly SubstitutionEngine _substitutor = new();
+    private readonly ICodeParser _coreParser = new CodeParser();
 
     /// <summary>
     /// Вычисляет слабейшее предусловие пошагово с конца программы к началу.
@@ -19,16 +21,18 @@ public class WpRunnerService : IWpEngine, ICodeParser
     public WpResult CalculateWp(Statement program, Condition postCondition)
     {
         var trace = new List<WpStep>();
-        var (finalCond, domainNotes) = ComputeWpInternal(program, postCondition, trace, stepCounter: 1);
+        var (finalCond, _) = ComputeWpInternal(program, postCondition, trace, stepCounter: 1);
 
-        // Упрощаем итоговое логическое дерево
+        // Упрощаем итоговое логическое дерево через SubstitutionEngine и алгебраические правила
         var simplified = SimplifyCondition(finalCond);
         simplified = _substitutor.Simplify(simplified);
-        string shortNotation = FormatCondition(simplified);
-        string humanNotation = ToHumanReadable(simplified);
 
-        // Формирование триады Хоара {Pre} P {Post}
-        string triad = $"{{ {shortNotation} }}\n{program}\n{{ {FormatCondition(postCondition)} }}";
+        // Используем Humanizer из WpEngine.Core.Parsing
+        string shortNotation = Humanizer.Format(simplified);
+        string humanNotation = Humanizer.Describe(simplified);
+
+        // Формирование триады Хоара {Pre} P {Post} через Humanizer из WpEngine.Core
+        string triad = $"{{ {shortNotation} }}\n{Humanizer.Format(program)}\n{{ {Humanizer.Format(postCondition)} }}\n\n{Humanizer.DescribeTriad(simplified, program, postCondition)}";
 
         return new WpResult(
             simplified,
@@ -54,7 +58,7 @@ public class WpRunnerService : IWpEngine, ICodeParser
                 log.Op,
                 SimplifyCondition(log.Right)
             )),
-            NotCondition not => new NotCondition(SimplifyCondition(not.Inner)),
+            NotCondition not => _substitutor.Simplify(new NotCondition(SimplifyCondition(not.Inner))),
             _ => cond
         };
     }
@@ -164,8 +168,8 @@ public class WpRunnerService : IWpEngine, ICodeParser
                 wp = _substitutor.Simplify(wp);
 
                 trace.Add(new WpStep(
-                    StatementCode: assign.ToString(),
-                    IntermediateCondition: FormatCondition(wp),
+                    StatementCode: Humanizer.Format(assign),
+                    IntermediateCondition: Humanizer.Format(wp),
                     Description: stepNotes.ToString()
                 ));
 
@@ -210,8 +214,8 @@ public class WpRunnerService : IWpEngine, ICodeParser
                 combined = _substitutor.Simplify(combined);
 
                 trace.Add(new WpStep(
-                    StatementCode: $"if ({ifStmt.Condition}) ...",
-                    IntermediateCondition: FormatCondition(combined),
+                    StatementCode: $"if ({Humanizer.Format(ifStmt.Condition)}) ...",
+                    IntermediateCondition: Humanizer.Format(combined),
                     Description: "Дизъюнкция по веткам ветвления: (Guard && wp(Then)) || (!Guard && wp(Else))."
                 ));
 
@@ -268,81 +272,14 @@ public class WpRunnerService : IWpEngine, ICodeParser
     }
 
     /// <summary>
-    /// Форматирует логическое дерево в читаемую математическую нотацию.
+    /// Форматирует логическое дерево через Humanizer из WpEngine.Core.
     /// </summary>
-    public string FormatCondition(Condition cond)
-    {
-        return FormatCondition(cond, isRoot: true);
-    }
-
-    private string FormatCondition(Condition cond, bool isRoot)
-    {
-        return cond switch
-        {
-            RelationalCondition rel => $"{FormatExpr(rel.Left)} {OpToString(rel.Op)} {FormatExpr(rel.Right)}",
-            LogicalCondition log => isRoot
-                ? $"{FormatCondition(log.Left, false)} {(log.Op == LogicalOp.And ? "∧" : "∨")} {FormatCondition(log.Right, false)}"
-                : $"({FormatCondition(log.Left, false)} {(log.Op == LogicalOp.And ? "∧" : "∨")} {FormatCondition(log.Right, false)})",
-            NotCondition not => $"¬({FormatCondition(not.Inner, false)})",
-            BooleanLiteralCondition lit => lit.Value ? "true" : "false",
-            _ => cond.ToString()
-        };
-    }
-
-    private static string OpToString(RelationalOp op) => op switch
-    {
-        RelationalOp.Equal => "=",
-        RelationalOp.NotEqual => "≠",
-        RelationalOp.Less => "<",
-        RelationalOp.LessOrEqual => "≤",
-        RelationalOp.Greater => ">",
-        RelationalOp.GreaterOrEqual => "≥",
-        _ => "="
-    };
-
-    private static string FormatExpr(Expr expr) => expr switch
-    {
-        NumberExpr n => n.Value.ToString(),
-        VariableExpr v => v.Name,
-        BinaryExpr bin => $"{FormatExpr(bin.Left)} {BinOpToString(bin.Op)} {FormatExpr(bin.Right)}",
-        AbsExpr abs => $"abs({FormatExpr(abs.Inner)})",
-        _ => expr.ToString()
-    };
-
-    private static string BinOpToString(BinaryOp op) => op switch
-    {
-        BinaryOp.Add => "+",
-        BinaryOp.Sub => "-",
-        BinaryOp.Mul => "*",
-        BinaryOp.Div => "/",
-        _ => "+"
-    };
+    public string FormatCondition(Condition cond) => Humanizer.Format(cond);
 
     /// <summary>
-    /// Преобразует предикат в словесное объяснение на человеческом языке (для отчета).
+    /// Преобразует предикат в словесное объяснение на русском языке через Humanizer из WpEngine.Core.
     /// </summary>
-    public string ToHumanReadable(Condition cond)
-    {
-        return cond switch
-        {
-            RelationalCondition rel => $"{rel.Left} {OpToHuman(rel.Op)} {rel.Right}",
-            LogicalCondition log => $"({ToHumanReadable(log.Left)} {(log.Op == LogicalOp.And ? "И" : "ИЛИ")} {ToHumanReadable(log.Right)})",
-            NotCondition not => $"НЕ({ToHumanReadable(not.Inner)})",
-            BooleanLiteralCondition lit => lit.Value ? "Истина (всегда выполнено)" : "Ложь (недостижимо)",
-            _ => cond.ToString()
-        };
-    }
-
-    private static string OpToHuman(RelationalOp op) => op switch
-    {
-        RelationalOp.Equal => "равно",
-        RelationalOp.NotEqual => "не равно",
-        RelationalOp.Less => "меньше",
-        RelationalOp.LessOrEqual => "меньше или равно",
-        RelationalOp.Greater => "больше",
-        RelationalOp.GreaterOrEqual => "больше или равно",
-        _ => "="
-    };
+    public string ToHumanReadable(Condition cond) => Humanizer.Describe(cond);
 
     /// <summary>
     /// Генерирует математическую нотацию в формате LaTeX для красивого рендеринга и экспорта.
@@ -370,6 +307,15 @@ public class WpRunnerService : IWpEngine, ICodeParser
         RelationalOp.Greater => ">",
         RelationalOp.GreaterOrEqual => @"\ge",
         _ => "="
+    };
+
+    private static string BinOpToString(BinaryOp op) => op switch
+    {
+        BinaryOp.Add => "+",
+        BinaryOp.Sub => "-",
+        BinaryOp.Mul => "*",
+        BinaryOp.Div => "/",
+        _ => "+"
     };
 
     public string ExprToLatex(Expr expr) => expr switch
@@ -491,25 +437,64 @@ public class WpRunnerService : IWpEngine, ICodeParser
         return result;
     }
 
-    // ==========================================
-    // ПАРСЕР ПОЛЬЗОВАТЕЛЬСКОГО ВВОДА
-    // ==========================================
+    // =========================================================================
+    // ПОДКЛЮЧЕНИЕ ПАРСЕРА WpEngine.Core.Parsing (CodeParser / Lexer / Parser)
+    // =========================================================================
 
     public Statement ParseProgram(string code)
     {
-        var parser = new TokenParser(code);
-        return parser.ParseProgram();
+        try
+        {
+            return _coreParser.ParseProgram(code ?? string.Empty);
+        }
+        catch (ParseException pex)
+        {
+            throw ConvertParseException(code ?? string.Empty, pex);
+        }
     }
 
     public Condition ParseCondition(string conditionText)
     {
-        var parser = new TokenParser(conditionText);
-        return parser.ParseFullCondition();
+        try
+        {
+            return _coreParser.ParseCondition(conditionText ?? string.Empty);
+        }
+        catch (ParseException pex)
+        {
+            throw ConvertParseException(conditionText ?? string.Empty, pex);
+        }
+    }
+
+    /// <summary>
+    /// Переводит ParseException из WpEngine.Core.Parsing (с индексом символа Position)
+    /// в координаты строки/столбца для подсветки строки с ошибкой в UI.
+    /// </summary>
+    private static CodeParseException ConvertParseException(string text, ParseException pex)
+    {
+        int clamped = Math.Clamp(pex.Position, 0, text.Length);
+        int line = 1;
+        int lineStart = 0;
+
+        for (int i = 0; i < clamped; i++)
+        {
+            if (text[i] == '\n')
+            {
+                line++;
+                lineStart = i + 1;
+            }
+        }
+
+        int col = clamped - lineStart + 1;
+        int lineEnd = text.IndexOf('\n', lineStart);
+        if (lineEnd < 0) lineEnd = text.Length;
+        string snippet = text.Substring(lineStart, lineEnd - lineStart).TrimEnd('\r');
+
+        return new CodeParseException(pex.Message, line, col, clamped, snippet);
     }
 }
 
 /// <summary>
-/// Исключение синтаксического анализа с точной привязкой к номеру строки и столбцу.
+/// Обёртка над ParseException из WpEngine.Core для привязки к номеру строки и столбцу в редакторе UI.
 /// </summary>
 public class CodeParseException : FormatException
 {
@@ -525,502 +510,5 @@ public class CodeParseException : FormatException
         Column = column;
         Position = position;
         LineSnippet = lineSnippet;
-    }
-}
-
-/// <summary>
-/// Лексер и рекурсивный синтаксический анализатор для операторов и предикатов с отслеживанием строк.
-/// </summary>
-internal class TokenParser
-{
-    private readonly string _text;
-    private int _pos;
-    private int _lastTokenEndPos;
-
-    public TokenParser(string text)
-    {
-        _text = text ?? string.Empty;
-        _pos = 0;
-        _lastTokenEndPos = 0;
-    }
-
-    private CodeParseException CreateError(int pos, string message)
-    {
-        int clamped = Math.Clamp(pos, 0, _text.Length);
-        int line = 1;
-        int lineStart = 0;
-
-        for (int i = 0; i < clamped; i++)
-        {
-            if (_text[i] == '\n')
-            {
-                line++;
-                lineStart = i + 1;
-            }
-        }
-
-        int col = clamped - lineStart + 1;
-        int lineEnd = _text.IndexOf('\n', lineStart);
-        if (lineEnd < 0) lineEnd = _text.Length;
-        string snippet = _text.Substring(lineStart, lineEnd - lineStart).TrimEnd('\r');
-
-        return new CodeParseException(message, line, col, clamped, snippet);
-    }
-
-    private void ValidateBrackets()
-    {
-        var stack = new Stack<(char Ch, int Pos)>();
-        for (int i = 0; i < _text.Length; i++)
-        {
-            char c = _text[i];
-            if (c == '(' || c == '{')
-            {
-                stack.Push((c, i));
-            }
-            else if (c == ')' || c == '}')
-            {
-                char expectedOpen = c == ')' ? '(' : '{';
-                if (stack.Count == 0)
-                {
-                    throw CreateError(i, $"Лишняя закрывающая скобка '{c}' без парной открывающей.");
-                }
-                var top = stack.Pop();
-                if (top.Ch != expectedOpen)
-                {
-                    throw CreateError(i, $"Несовпадение скобок: ожидалась закрывающая для '{top.Ch}', но встречена '{c}'.");
-                }
-            }
-        }
-
-        if (stack.Count > 0)
-        {
-            var unclosed = stack.Pop();
-            char expectedClose = unclosed.Ch == '(' ? ')' : '}';
-            throw CreateError(unclosed.Pos, $"Не закрыта скобка '{unclosed.Ch}' (ожидалась '{expectedClose}').");
-        }
-    }
-
-    private void SkipWhitespace()
-    {
-        while (_pos < _text.Length && char.IsWhiteSpace(_text[_pos]))
-            _pos++;
-    }
-
-    private bool HasNewlineBetween(int fromPos, int toPos)
-    {
-        int start = Math.Clamp(fromPos, 0, _text.Length);
-        int end = Math.Clamp(toPos, 0, _text.Length);
-        for (int i = start; i < end; i++)
-        {
-            if (_text[i] == '\n') return true;
-        }
-        return false;
-    }
-
-    private bool Peek(string s)
-    {
-        SkipWhitespace();
-        if (_pos + s.Length > _text.Length) return false;
-        return string.Compare(_text, _pos, s, 0, s.Length, StringComparison.OrdinalIgnoreCase) == 0;
-    }
-
-    private bool PeekWord(string word)
-    {
-        SkipWhitespace();
-        if (_pos + word.Length > _text.Length) return false;
-        if (string.Compare(_text, _pos, word, 0, word.Length, StringComparison.OrdinalIgnoreCase) != 0)
-            return false;
-        int after = _pos + word.Length;
-        return after >= _text.Length || (!char.IsLetterOrDigit(_text[after]) && _text[after] != '_');
-    }
-
-    private bool Match(string s)
-    {
-        if (Peek(s))
-        {
-            _pos += s.Length;
-            _lastTokenEndPos = _pos;
-            return true;
-        }
-        return false;
-    }
-
-    private bool MatchWord(string word)
-    {
-        if (PeekWord(word))
-        {
-            _pos += word.Length;
-            _lastTokenEndPos = _pos;
-            return true;
-        }
-        return false;
-    }
-
-    public Statement ParseProgram()
-    {
-        ValidateBrackets();
-
-        var list = new List<Statement>();
-        SkipWhitespace();
-
-        while (_pos < _text.Length)
-        {
-            if (Match(";")) continue;
-            var stmt = ParseStatement();
-            if (stmt != null)
-                list.Add(stmt);
-            SkipWhitespace();
-        }
-
-        if (list.Count == 0)
-            throw CreateError(0, "Программа не содержит операторов.");
-
-        return list.Count == 1 ? list[0] : new SequenceStatement(list);
-    }
-
-    private Statement ParseStatement()
-    {
-        SkipWhitespace();
-        if (PeekWord("if"))
-        {
-            int ifPos = _pos;
-            MatchWord("if");
-            SkipWhitespace();
-            bool hasParen = Match("(");
-            if (!hasParen)
-                throw CreateError(_lastTokenEndPos, "После ключевого слова 'if' ожидалось условие в круглых скобках '('.");
-
-            var cond = ParseCondition();
-            if (!Match(")"))
-                throw CreateError(_pos, "Ожидалась закрывающая скобка ')' после условия if.");
-
-            Statement thenBranch = ParseBlockOrSingle();
-            SkipWhitespace();
-
-            Statement elseBranch;
-            if (MatchWord("else"))
-            {
-                elseBranch = ParseBlockOrSingle();
-            }
-            else
-            {
-                elseBranch = new SequenceStatement(new List<Statement>());
-            }
-
-            return new IfStatement(cond, thenBranch, elseBranch);
-        }
-
-        if (PeekWord("else"))
-        {
-            throw CreateError(_pos, "Ключевое слово 'else' без предшествующего блока 'if'.");
-        }
-
-        // Присваивание: x := expr;
-        int varStartPos = _pos;
-        string varName = ParseIdentifier();
-        int afterVarPos = _lastTokenEndPos;
-        SkipWhitespace();
-
-        if (Match(":=") || Match("≔") || Match("="))
-        {
-            var expr = ParseExpr();
-            SkipWhitespace();
-
-            // Если точка с запятой пропущена, но на этой же строке сразу идет еще один токен (не '}' и не конец строки)
-            if (!Match(";"))
-            {
-                if (_pos < _text.Length && _text[_pos] != '}' && !HasNewlineBetween(_lastTokenEndPos, _pos))
-                {
-                    throw CreateError(_pos, $"Неожиданный токен '{GetTokenPreview(_pos)}' — возможно, пропущена точка с запятой ';' или арифметический оператор.");
-                }
-            }
-            return new AssignmentStatement(varName, expr);
-        }
-
-        throw CreateError(afterVarPos, $"После переменной '{varName}' ожидался оператор присваивания ':='.");
-    }
-
-    private string GetTokenPreview(int pos)
-    {
-        if (pos >= _text.Length) return "конец строки";
-        int end = pos;
-        while (end < _text.Length && !char.IsWhiteSpace(_text[end]) && end - pos < 12)
-            end++;
-        return _text.Substring(pos, Math.Max(1, end - pos));
-    }
-
-    private Statement ParseBlockOrSingle()
-    {
-        SkipWhitespace();
-        if (Match("{"))
-        {
-            int openBracePos = _lastTokenEndPos - 1;
-            var stmts = new List<Statement>();
-            SkipWhitespace();
-            while (_pos < _text.Length && !Peek("}"))
-            {
-                if (Match(";")) continue;
-                stmts.Add(ParseStatement());
-                SkipWhitespace();
-            }
-            if (!Match("}"))
-                throw CreateError(openBracePos, "Не закрыта фигурная скобка '{' блока операторов.");
-            if (stmts.Count == 0)
-                throw CreateError(openBracePos, "Блок '{ ... }' не должен быть пустым — укажите хотя бы один оператор.");
-            return stmts.Count == 1 ? stmts[0] : new SequenceStatement(stmts);
-        }
-        return ParseStatement();
-    }
-
-    public Condition ParseFullCondition()
-    {
-        ValidateBrackets();
-        var cond = ParseCondition();
-        SkipWhitespace();
-        if (_pos < _text.Length)
-        {
-            throw CreateError(_pos, $"Неожиданный фрагмент '{GetTokenPreview(_pos)}' в логическом условии.");
-        }
-        return cond;
-    }
-
-    public Condition ParseCondition()
-    {
-        return ParseOr();
-    }
-
-    private Condition ParseOr()
-    {
-        var left = ParseAnd();
-        SkipWhitespace();
-        while (Match("||") || Match("∨") || MatchWord("or"))
-        {
-            var right = ParseAnd();
-            left = new LogicalCondition(left, LogicalOp.Or, right);
-            SkipWhitespace();
-        }
-        return left;
-    }
-
-    private Condition ParseAnd()
-    {
-        var left = ParseUnaryCond();
-        SkipWhitespace();
-        while (Match("&&") || Match("∧") || MatchWord("and"))
-        {
-            var right = ParseUnaryCond();
-            left = new LogicalCondition(left, LogicalOp.And, right);
-            SkipWhitespace();
-        }
-        return left;
-    }
-
-    private Condition ParseUnaryCond()
-    {
-        SkipWhitespace();
-        if (Match("!") || Match("¬") || MatchWord("not"))
-        {
-            var inner = ParseUnaryCond();
-            return new NotCondition(inner);
-        }
-
-        if (Match("("))
-        {
-            int backtrackPos = _pos;
-            int savedLastToken = _lastTokenEndPos;
-            try
-            {
-                var cond = ParseCondition();
-                SkipWhitespace();
-                if (Match(")"))
-                {
-                    SkipWhitespace();
-                    if (!IsRelationalOpNext())
-                    {
-                        return cond;
-                    }
-                }
-            }
-            catch
-            {
-                // Откат к попытке распарсить как арифметическое выражение в скобках
-            }
-            _pos = backtrackPos - 1;
-            _lastTokenEndPos = savedLastToken;
-        }
-
-        return ParseRelational();
-    }
-
-    private bool IsRelationalOpNext()
-    {
-        return Peek("==") || Peek("!=") || Peek("≠") || Peek(">=") || Peek("≥") ||
-               Peek("<=") || Peek("≤") || Peek(">") || Peek("<");
-    }
-
-    private Condition ParseRelational()
-    {
-        var left = ParseExpr();
-        int afterLeftPos = _lastTokenEndPos;
-        SkipWhitespace();
-
-        RelationalOp op;
-        if (Match("==") || Match("=")) op = RelationalOp.Equal;
-        else if (Match("!=") || Match("≠")) op = RelationalOp.NotEqual;
-        else if (Match(">=") || Match("≥")) op = RelationalOp.GreaterOrEqual;
-        else if (Match("<=") || Match("≤")) op = RelationalOp.LessOrEqual;
-        else if (Match(">")) op = RelationalOp.Greater;
-        else if (Match("<")) op = RelationalOp.Less;
-        else
-        {
-            if (left is VariableExpr v && v.Name.Equals("true", StringComparison.OrdinalIgnoreCase))
-                return new BooleanLiteralCondition(true);
-            if (left is VariableExpr v2 && v2.Name.Equals("false", StringComparison.OrdinalIgnoreCase))
-                return new BooleanLiteralCondition(false);
-
-            throw CreateError(afterLeftPos, $"После выражения '{left}' ожидался оператор сравнения (==, !=, <, >, <=, >=).");
-        }
-
-        var right = ParseExpr();
-        return new RelationalCondition(left, op, right);
-    }
-
-    public Expr ParseExpr()
-    {
-        return ParseAddSub();
-    }
-
-    private Expr ParseAddSub()
-    {
-        var left = ParseMulDiv();
-        SkipWhitespace();
-        while (true)
-        {
-            if (Match("+"))
-            {
-                var right = ParseMulDiv();
-                left = new BinaryExpr(left, BinaryOp.Add, right);
-            }
-            else if (Match("-"))
-            {
-                var right = ParseMulDiv();
-                left = new BinaryExpr(left, BinaryOp.Sub, right);
-            }
-            else
-            {
-                break;
-            }
-            SkipWhitespace();
-        }
-        return left;
-    }
-
-    private Expr ParseMulDiv()
-    {
-        var left = ParsePrimary();
-        SkipWhitespace();
-        while (true)
-        {
-            if (Match("*"))
-            {
-                var right = ParsePrimary();
-                left = new BinaryExpr(left, BinaryOp.Mul, right);
-            }
-            else if (Match("/"))
-            {
-                var right = ParsePrimary();
-                left = new BinaryExpr(left, BinaryOp.Div, right);
-            }
-            else
-            {
-                break;
-            }
-            SkipWhitespace();
-        }
-        return left;
-    }
-
-    private Expr ParsePrimary()
-    {
-        int beforeSkipPos = _lastTokenEndPos;
-        SkipWhitespace();
-
-        if (_pos >= _text.Length)
-            throw CreateError(beforeSkipPos, "Неожиданный конец строки — ожидалось выражение (число или переменная).");
-
-        // Если после оператора (:=, +, -, *, /) строка оборвалась и на следующей строке идет '}' или ';' или 'else'
-        if (_text[_pos] == '}' || _text[_pos] == ';' || PeekWord("else"))
-        {
-            int errPos = HasNewlineBetween(beforeSkipPos, _pos) ? beforeSkipPos : _pos;
-            throw CreateError(errPos, "Пропущено выражение после оператора.");
-        }
-
-        if (Match("("))
-        {
-            var expr = ParseExpr();
-            SkipWhitespace();
-            if (!Match(")"))
-                throw CreateError(_lastTokenEndPos, "Ожидалась закрывающая скобка ')'.");
-            return expr;
-        }
-
-        if (Peek("abs("))
-        {
-            Match("abs");
-            Match("(");
-            var inner = ParseExpr();
-            SkipWhitespace();
-            if (!Match(")"))
-                throw CreateError(_lastTokenEndPos, "Ожидалась закрывающая скобка ')' в вызове abs().");
-            return new AbsExpr(inner);
-        }
-
-        // Унарный минус (например, -5 или -x)
-        if (Match("-"))
-        {
-            var inner = ParsePrimary();
-            return new BinaryExpr(new NumberExpr(0), BinaryOp.Sub, inner);
-        }
-
-        // Число
-        if (char.IsDigit(_text[_pos]))
-        {
-            int start = _pos;
-            while (_pos < _text.Length && (char.IsDigit(_text[_pos]) || _text[_pos] == '.'))
-                _pos++;
-            _lastTokenEndPos = _pos;
-            string numStr = _text.Substring(start, _pos - start);
-            if (double.TryParse(numStr, System.Globalization.CultureInfo.InvariantCulture, out double val))
-                return new NumberExpr(val);
-            throw CreateError(start, $"Некорректная запись числа '{numStr}'.");
-        }
-
-        // Идентификатор
-        if (char.IsLetter(_text[_pos]) || _text[_pos] == '_')
-        {
-            string id = ParseIdentifier();
-            return new VariableExpr(id);
-        }
-
-        throw CreateError(_pos, $"Недопустимый символ '{_text[_pos]}' в выражении.");
-    }
-
-    private string ParseIdentifier()
-    {
-        int beforeSkipPos = _lastTokenEndPos;
-        SkipWhitespace();
-        int start = _pos;
-        while (_pos < _text.Length && (char.IsLetterOrDigit(_text[_pos]) || _text[_pos] == '_'))
-            _pos++;
-
-        if (start == _pos)
-        {
-            int errPos = _pos >= _text.Length ? beforeSkipPos : _pos;
-            string found = _pos < _text.Length ? $" (встречено '{_text[_pos]}')" : string.Empty;
-            throw CreateError(errPos, $"Ожидалось имя переменной{found}.");
-        }
-
-        _lastTokenEndPos = _pos;
-        return _text.Substring(start, _pos - start);
     }
 }
