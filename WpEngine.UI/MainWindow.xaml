@@ -27,11 +27,14 @@
 
     <Window.InputBindings>
         <KeyBinding Key="Return" Modifiers="Ctrl" Command="{Binding CalculateCommand}" />
+        <KeyBinding Key="S" Modifiers="Ctrl" Command="{Binding ExportReportCommand}" />
+        <KeyBinding Key="R" Modifiers="Ctrl" Command="{Binding CalculateCommand}" />
     </Window.InputBindings>
 
     <Window.Resources>
         <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
         <conv:BoolToVisibilityConverter x:Key="InvBoolToVis" Invert="True" />
+        <conv:StringToVisibilityConverter x:Key="StringToVis" />
     </Window.Resources>
 
     <Grid>
@@ -149,13 +152,42 @@
                         Style="{StaticResource SecondaryButton}"
                         Command="{Binding ClearCommand}"
                         Margin="0,0,8,0" />
+                <Button Content="Экспорт отчёта"
+                        Style="{StaticResource SecondaryButton}"
+                        Command="{Binding ExportReportCommand}"
+                        Margin="0,0,8,0"
+                        ToolTipService.Placement="Bottom"
+                        ToolTipService.VerticalOffset="6">
+                    <Button.ToolTip>
+                        <ToolTip>
+                            <StackPanel>
+                                <TextBlock Text="Экспорт отчёта в Markdown (.md)"
+                                           FontFamily="{StaticResource DisplayFont}"
+                                           FontWeight="SemiBold"
+                                           FontSize="13"
+                                           Foreground="{StaticResource TextPrimary}"
+                                           Margin="0,0,0,4" />
+                                <TextBlock Text="Сохраняет полный отчёт: постусловие, программа, wp, триада Хоара, пошаговый трейс и LaTeX-формулы. Совместим с Word и Overleaf."
+                                           FontSize="12"
+                                           Foreground="{StaticResource TextSecondary}"
+                                           TextWrapping="Wrap"
+                                           LineHeight="17" />
+                                <TextBlock Text="Горячая клавиша: Ctrl + S"
+                                           FontSize="11"
+                                           Foreground="{StaticResource BrandPrimary}"
+                                           Margin="0,6,0,0"
+                                           FontWeight="Medium" />
+                            </StackPanel>
+                        </ToolTip>
+                    </Button.ToolTip>
+                </Button>
                 <Button Content="Рассчитать wp"
                         Style="{StaticResource PrimaryButton}"
                         Command="{Binding CalculateCommand}" />
             </StackPanel>
         </Grid>
 
-        <!-- Основная рабочая область (две карточки Google Surface) -->
+        <!-- Основная рабочая область (две карточки) -->
         <Grid Grid.Row="1" Margin="20,6,20,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="1*" MinWidth="380" />
@@ -784,11 +816,26 @@
                        FontSize="12"
                        Foreground="{StaticResource TextMuted}"
                        VerticalAlignment="Center" />
-            <TextBlock Text="Наведите на плашку «? подсказка» или на пример для разбора • Ctrl + Enter — расчёт"
-                       FontSize="12"
-                       Foreground="{StaticResource TextMuted}"
-                       HorizontalAlignment="Right"
-                       VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <TextBlock FontSize="12"
+                           Foreground="{StaticResource TextMuted}"
+                           VerticalAlignment="Center"
+                           Margin="0,0,14,0">
+                    <TextBlock.Text>Наведите на «? подсказка» или пример • Ctrl+R — расчёт • Ctrl+S — экспорт</TextBlock.Text>
+                </TextBlock>
+                <Border Background="{StaticResource BgTonal}"
+                        CornerRadius="6"
+                        Padding="8,2"
+                        Visibility="{Binding ElapsedTimeText, Converter={StaticResource StringToVis}}"
+                        ToolTip="Время последнего вычисления wp">
+                    <TextBlock Text="{Binding ElapsedTimeText}"
+                               FontFamily="{StaticResource CodeFont}"
+                               FontSize="11.5"
+                               Foreground="{StaticResource BrandPrimary}"
+                               FontWeight="Medium"
+                               VerticalAlignment="Center" />
+                </Border>
+            </StackPanel>
         </Grid>
     </Grid>
 </Window>
